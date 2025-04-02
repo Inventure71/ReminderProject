@@ -19,6 +19,57 @@ class GeminiHandler:
 
         self.model = "gemini-2.0-flash"
 
+    @staticmethod
+    def split_into_chunks(text, extra="", chunk_size=16384):
+        """
+        Split the input text into chunks of a specified size while going line by line, if an extra string is given remove the length of that string from all blocks (they should now be shorter).
+        """
+        # Calculate effective chunk size considering the extra string
+        effective_chunk_size = chunk_size - len(extra)
+        if effective_chunk_size <= 0:
+            raise ValueError("Extra text is too long for the given chunk size")
+
+        # Handle empty text case
+        if not text:
+            return []
+
+        # Split the text into lines
+        lines = text if isinstance(text, list) else text.split('\n')
+
+        chunks = []
+        current_chunk = []
+        current_size = 0
+
+        for line in lines:
+            line_size = len(line)
+
+            # If adding this line would exceed the chunk size, start a new chunk
+            if current_size + line_size > effective_chunk_size and current_chunk:
+                chunks.append('\n'.join(current_chunk))
+                current_chunk = []
+                current_size = 0
+
+            # If a single line is larger than the chunk size, we need to split it
+            if line_size > effective_chunk_size:
+                # If there's content in the current chunk, add it to chunks
+                if current_chunk:
+                    chunks.append('\n'.join(current_chunk))
+                    current_chunk = []
+                    current_size = 0
+
+                # Split the long line into multiple chunks
+                for i in range(0, len(line), effective_chunk_size):
+                    chunks.append(line[i:i + effective_chunk_size])
+            else:
+                # Add the line to the current chunk
+                current_chunk.append(line)
+                current_size += line_size + 1  # +1 for the newline character
+
+        # Add the last chunk if it's not empty
+        if current_chunk:
+            chunks.append('\n'.join(current_chunk))
+
+        return chunks
 
     def generate_generic(self, contents, response_mime_type="text/plain", streaming=False):
         generate_content_config = types.GenerateContentConfig(
@@ -54,10 +105,13 @@ class GeminiHandler:
         for chunk in new_messages:
 
             prompt = f"""
+projects:
+{projects}
             
-            messages: {chunk}
-            
-            """
+messages:
+{chunk}
+
+"""
 
             contents = [
                 types.Content(
@@ -114,84 +168,5 @@ class GeminiHandler:
 
         return total_response
 
-    def split_into_chunks(self, text, extra="", chunk_size=16384):
-        """
-        Split the input text into chunks of a specified size while going line by line, if an extra string is given remove the length of that string from all blocks (they should now be shorter).
-        """
-        # Calculate effective chunk size considering the extra string
-        effective_chunk_size = chunk_size - len(extra)
-        if effective_chunk_size <= 0:
-            raise ValueError("Extra text is too long for the given chunk size")
-
-        # Handle empty text case
-        if not text:
-            return []
-
-        # Split the text into lines
-        lines = text if isinstance(text, list) else text.split('\n')
-
-        chunks = []
-        current_chunk = []
-        current_size = 0
-
-        for line in lines:
-            line_size = len(line)
-
-            # If adding this line would exceed the chunk size, start a new chunk
-            if current_size + line_size > effective_chunk_size and current_chunk:
-                chunks.append('\n'.join(current_chunk))
-                current_chunk = []
-                current_size = 0
-
-            # If a single line is larger than the chunk size, we need to split it
-            if line_size > effective_chunk_size:
-                # If there's content in the current chunk, add it to chunks
-                if current_chunk:
-                    chunks.append('\n'.join(current_chunk))
-                    current_chunk = []
-                    current_size = 0
-
-                # Split the long line into multiple chunks
-                for i in range(0, len(line), effective_chunk_size):
-                    chunks.append(line[i:i + effective_chunk_size])
-            else:
-                # Add the line to the current chunk
-                current_chunk.append(line)
-                current_size += line_size + 1  # +1 for the newline character
-
-        # Add the last chunk if it's not empty
-        if current_chunk:
-            chunks.append('\n'.join(current_chunk))
-
-        return chunks
 
 
-
-
-def generate():
-    client = genai.Client(
-        api_key=os.environ.get("GEMINI_API_KEY"),
-    )
-
-    model = "gemini-2.0-flash"
-    contents = [
-        types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(text="""INSERT_INPUT_HERE"""),
-            ],
-        ),
-    ]
-    generate_content_config = types.GenerateContentConfig(
-        response_mime_type="text/plain",
-    )
-
-    for chunk in client.models.generate_content_stream(
-        model=model,
-        contents=contents,
-        config=generate_content_config,
-    ):
-        print(chunk.text, end="")
-
-if __name__ == "__main__":
-    generate()
