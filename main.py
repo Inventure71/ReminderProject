@@ -1,6 +1,9 @@
 import tkinter as tk
-
 from datetime import datetime
+from database_utils import DatabaseHandler
+
+# Create a database handler instance
+db_handler = DatabaseHandler()
 
 
 
@@ -11,8 +14,8 @@ def send_message(event=None):
     """Handle sending a message: update the UI and persist the message to the database."""
     message = entry.get().strip()
     if message:
-        # Insert the user's message into the database.
-        insert_message("You", message)
+        # Insert the user's message into the database with a category.
+        db_handler.insert_message("You", message, category="user_message")
 
         # Update the chat display.
         chat_box.config(state=tk.NORMAL)
@@ -20,7 +23,7 @@ def send_message(event=None):
 
         # For demonstration, the bot echoes the user's message.
         bot_response = message
-        insert_message("Bot", bot_response)
+        db_handler.insert_message("Bot", bot_response, category="bot_response")
         chat_box.insert(tk.END, f"Bot: {bot_response}\n\n")
 
         chat_box.see(tk.END)
@@ -32,17 +35,34 @@ def send_message(event=None):
 
 def load_chat_history():
     """Load and display all past chat messages from the database."""
-    history = get_chat_history()
+    history = db_handler.get_chat_history()
     chat_box.config(state=tk.NORMAL)
-    for sender, message, timestamp in history:
-        # Optionally, you can format the timestamp if needed.
-        chat_box.insert(tk.END, f"{sender}: {message}\n")
+
+    # Clear existing content
+    chat_box.delete(1.0, tk.END)
+
+    for row in history:
+        sender = row[0]
+        message = row[1]
+        timestamp = row[2]
+
+        # Check if category is available (it will be the 4th element if present)
+        if len(row) > 3 and row[3]:
+            category = row[3]
+            chat_box.insert(tk.END, f"{sender} [{category}]: {message}\n")
+        else:
+            chat_box.insert(tk.END, f"{sender}: {message}\n")
+
     chat_box.config(state=tk.DISABLED)
     chat_box.see(tk.END)
 
 
 # Initialize the database.
-init_db()
+db_handler.init_db()
+
+# Demonstrate adding a new column if it doesn't exist
+# This could be used to categorize messages (e.g., "question", "answer", "notification")
+db_handler.add_column_if_not_exists("messages", "category", "TEXT")
 
 # Set up the main window.
 root = tk.Tk()
