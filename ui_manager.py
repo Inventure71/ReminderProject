@@ -36,13 +36,13 @@ class UIManager:
         # Bind tab selection event
         self.pages.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
-        # Create projects page
-        self.projects_page = ttk.Frame(self.pages)
-        self.pages.add(self.projects_page, text="Projects")
-
         # Create global chat page
         self.global_chat_page = ttk.Frame(self.pages)
         self.pages.add(self.global_chat_page, text="Global Chat")
+
+        # Create projects page
+        self.projects_page = ttk.Frame(self.pages)
+        self.pages.add(self.projects_page, text="Projects")
 
         # Create project chat page
         self.chat_page = ttk.Frame(self.pages)
