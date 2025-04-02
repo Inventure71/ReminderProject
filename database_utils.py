@@ -115,13 +115,14 @@ class DatabaseHandler:
         self.cursor.execute(f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders})", values)
         self.commit()
 
-    def get_chat_history(self, table_name="messages", project=None):
+    def get_chat_history(self, table_name="messages", project=None, limit=None):
         """
         Retrieve all messages from the database, ordered by their ID.
 
         Args:
             table_name (str, optional): The table to query. Defaults to "messages".
             project (str, optional): Filter messages by project. Defaults to None (all projects).
+            limit (int, optional): Limit the number of messages returned. Defaults to None (all messages).
         """
         # Check which columns exist
         self.cursor.execute(f"PRAGMA table_info({table_name})")
@@ -136,6 +137,8 @@ class DatabaseHandler:
             select_columns.append("message_type")
         if "project" in columns:
             select_columns.append("project")
+        if "file_path" in columns:
+            select_columns.append("file_path")
 
         select_clause = ", ".join(select_columns)
 
@@ -146,12 +149,18 @@ class DatabaseHandler:
             where_clause = " WHERE project = ?"
             params.append(project)
 
+        # Add LIMIT clause if specified
+        limit_clause = ""
+        if limit:
+            limit_clause = " LIMIT ?"
+            params.append(limit)
+
         # Execute query
-        query = f"SELECT {select_clause} FROM {table_name}{where_clause} ORDER BY id"
+        query = f"SELECT {select_clause} FROM {table_name}{where_clause} ORDER BY id{limit_clause}"
         self.cursor.execute(query, params)
 
         rows = self.cursor.fetchall()
-        return rows
+        return [self._row_to_dict(row, select_columns) for row in rows]
 
     def delete_message(self, message_id, table_name="messages"):
         """
@@ -206,6 +215,8 @@ class DatabaseHandler:
             select_columns.append("message_type")
         if "project" in columns:
             select_columns.append("project")
+        if "file_path" in columns:
+            select_columns.append("file_path")
 
         select_clause = ", ".join(select_columns)
 
@@ -222,7 +233,35 @@ class DatabaseHandler:
         self.cursor.execute(query, params)
 
         rows = self.cursor.fetchall()
-        return rows
+        return [self._row_to_dict(row, select_columns) for row in rows]
+
+    def _row_to_dict(self, row, columns):
+        """
+        Convert a database row (tuple) to a dictionary.
+
+        Args:
+            row (tuple): The database row
+            columns (list): The column names
+
+        Returns:
+            dict: The row as a dictionary
+        """
+        return {columns[i]: row[i] for i in range(len(columns))}
+
+    def get_messages(self, project=None, limit=None, table_name="messages"):
+        """
+        Retrieve messages from the database, optionally filtered by project and limited.
+        This is a wrapper around get_chat_history for backward compatibility.
+
+        Args:
+            project (str, optional): Filter messages by project. Defaults to None (all projects).
+            limit (int, optional): Limit the number of messages returned. Defaults to None (all messages).
+            table_name (str, optional): The table to query. Defaults to "messages".
+
+        Returns:
+            list: A list of message dictionaries
+        """
+        return self.get_chat_history(table_name, project, limit)
 
     def get_projects(self):
         """Get all projects from the database."""
@@ -243,3 +282,13 @@ class DatabaseHandler:
         except sqlite3.IntegrityError:
             # Project already exists
             return False
+
+    def get_unprocessed_messages(self):
+        """
+        Stub method for retrieving unprocessed messages.
+        This is a placeholder that returns an empty list.
+
+        Returns:
+            list: An empty list for now
+        """
+        return []

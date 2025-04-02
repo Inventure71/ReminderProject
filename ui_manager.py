@@ -16,10 +16,10 @@ class UIManager:
         self.current_file_path = None
         self.current_file_type = None
         self.auto_update_active = True
-        
+
         # Initialize UI components
         self.setup_ui()
-        
+
         # Start auto-update
         self.auto_update()
 
@@ -33,25 +33,36 @@ class UIManager:
         self.pages = ttk.Notebook(self.main_container)
         self.pages.pack(fill=tk.BOTH, expand=True)
 
+        # Bind tab selection event
+        self.pages.bind("<<NotebookTabChanged>>", self.on_tab_changed)
+
         # Create projects page
         self.projects_page = ttk.Frame(self.pages)
         self.pages.add(self.projects_page, text="Projects")
 
+        # Create global chat page
+        self.global_chat_page = ttk.Frame(self.pages)
+        self.pages.add(self.global_chat_page, text="Global Chat")
+
         # Create project chat page
         self.chat_page = ttk.Frame(self.pages)
-        self.pages.add(self.chat_page, text="Chat")
+        self.pages.add(self.chat_page, text="Project Chat")
 
         # Set up projects page
         self.setup_projects_page()
 
-        # Set up chat page
+        # Set up global chat page
+        self.setup_global_chat_page()
+
+        # Set up project chat page
         self.setup_chat_page()
 
         # Create menu bar
         self.create_menu()
 
-        # Load initial projects
+        # Load initial projects and global chat
         self.load_projects()
+        self.load_global_chat_history()
 
     def setup_projects_page(self):
         """Set up the projects page with a grid of project folders."""
@@ -75,8 +86,65 @@ class UIManager:
         self.new_project_btn = ttk.Button(self.projects_page, text="New Project", command=self.create_new_project)
         self.new_project_btn.pack(pady=10)
 
+    def setup_global_chat_page(self):
+        """Set up the global chat page with message display and input area."""
+        # Create header frame
+        header_frame = ttk.Frame(self.global_chat_page)
+        header_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        # Global chat label
+        global_label = ttk.Label(header_frame, text="Global Chat", font=("Arial", 12, "bold"))
+        global_label.pack(side=tk.LEFT)
+
+        # Search frame
+        search_frame = ttk.Frame(header_frame)
+        search_frame.pack(side=tk.RIGHT)
+
+        global_search_entry = ttk.Entry(search_frame, width=20)
+        global_search_entry.pack(side=tk.LEFT, padx=5)
+
+        global_search_button = ttk.Button(search_frame, text="Search", 
+                                        command=lambda: self.search_messages(project="main"))
+        global_search_button.pack(side=tk.LEFT)
+
+        # Create messages area
+        self.global_messages_canvas = tk.Canvas(self.global_chat_page)
+        self.global_messages_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        self.global_messages_frame = ttk.Frame(self.global_messages_canvas)
+        self.global_messages_canvas.create_window((0, 0), window=self.global_messages_frame, anchor=tk.NW)
+
+        # Add scrollbar
+        global_scrollbar = ttk.Scrollbar(self.global_chat_page, orient=tk.VERTICAL, 
+                                       command=self.global_messages_canvas.yview)
+        global_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.global_messages_canvas.configure(yscrollcommand=global_scrollbar.set)
+
+        # Create input area
+        global_input_frame = ttk.Frame(self.global_chat_page)
+        global_input_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        # Attachment label
+        self.global_attach_label = ttk.Label(global_input_frame, text="")
+        self.global_attach_label.pack(anchor=tk.W, pady=2)
+
+        # Message entry
+        self.global_entry = ttk.Entry(global_input_frame)
+        self.global_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.global_entry.bind("<Return>", lambda event: self.send_message(event, is_global=True))
+
+        # Attach button
+        global_attach_button = ttk.Button(global_input_frame, text="Attach", 
+                                        command=lambda: self.attach_file(is_global=True))
+        global_attach_button.pack(side=tk.LEFT, padx=5)
+
+        # Send button
+        global_send_button = ttk.Button(global_input_frame, text="Send", 
+                                      command=lambda: self.send_message(is_global=True))
+        global_send_button.pack(side=tk.LEFT, padx=5)
+
     def setup_chat_page(self):
-        """Set up the chat page with message display and input area."""
+        """Set up the project chat page with message display and input area."""
         # Create header frame
         header_frame = ttk.Frame(self.chat_page)
         header_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -84,6 +152,10 @@ class UIManager:
         # Project label
         self.project_label = ttk.Label(header_frame, text="Current Project: main", font=("Arial", 12, "bold"))
         self.project_label.pack(side=tk.LEFT)
+
+        # Back to Projects button
+        back_button = ttk.Button(header_frame, text="Back to Projects", command=self.back_to_projects)
+        back_button.pack(side=tk.LEFT, padx=10)
 
         # Search frame
         search_frame = ttk.Frame(header_frame)
@@ -190,18 +262,53 @@ class UIManager:
         """Open a project's chat."""
         self.current_project = project_name
         self.project_label.config(text=f"Current Project: {project_name}")
-        self.pages.select(self.chat_page)
+        # Show the Project Chat tab
+        self.pages.select(2)  # Index 2 is the Project Chat tab
         self.load_chat_history()
+
+    def back_to_projects(self):
+        """Switch back to the projects page."""
+        self.pages.select(self.projects_page)
+        self.load_projects()
+
+    def on_tab_changed(self, event):
+        """Handle tab selection events."""
+        selected_tab = self.pages.index(self.pages.select())
+
+        # Tab index 0: Projects
+        if selected_tab == 0:
+            self.load_projects()
+
+        # Tab index 1: Global Chat
+        elif selected_tab == 1:
+            self.load_global_chat_history()
+
+        # Tab index 2: Project Chat
+        elif selected_tab == 2:
+            # Only load project chat if a project is selected
+            if self.current_project != "main":
+                self.load_chat_history()
+            else:
+                # If no project is selected, switch back to Global Chat
+                self.pages.select(1)
 
     def auto_update(self):
         """Periodically refresh the chat and projects."""
         if self.auto_update_active:
-            if self.current_project == "main":
+            # Load global chat history
+            self.load_global_chat_history()
+
+            # Load project chat history if a project is selected
+            if self.current_project != "main":
                 self.load_chat_history()
+
+            # Load projects
             self.load_projects()
+
+            # Schedule next update
             self.root.after(5000, self.auto_update)
 
-    def attach_file(self):
+    def attach_file(self, is_global=False):
         """Handle attaching a file to the message."""
         file_path = filedialog.askopenfilename(
             title="Select a file",
@@ -224,11 +331,28 @@ class UIManager:
                 self.current_file_type = 'file'
 
             self.current_file_path = file_path
-            self.attach_label.config(text=f"Attached: {os.path.basename(file_path)} ({self.current_file_type})")
 
-    def send_message(self, event=None):
+            if is_global:
+                self.global_attach_label.config(text=f"Attached: {os.path.basename(file_path)} ({self.current_file_type})")
+            else:
+                self.attach_label.config(text=f"Attached: {os.path.basename(file_path)} ({self.current_file_type})")
+
+    def send_message(self, event=None, is_global=False):
         """Handle sending a message."""
-        message = self.entry.get().strip()
+        if is_global:
+            message = self.global_entry.get().strip()
+            project = "main"
+            entry_widget = self.global_entry
+            attach_label = self.global_attach_label
+            messages_frame = self.global_messages_frame
+            messages_canvas = self.global_messages_canvas
+        else:
+            message = self.entry.get().strip()
+            project = self.current_project
+            entry_widget = self.entry
+            attach_label = self.attach_label
+            messages_frame = self.messages_frame
+            messages_canvas = self.messages_canvas
 
         if not message and not self.current_file_path:
             return
@@ -248,19 +372,82 @@ class UIManager:
             message, 
             category="user_message", 
             message_type=message_type,
-            project=self.current_project,
+            project=project,
             file_path=file_content if file_content else ""
         )
 
-        self.add_message_to_chat("You", message, message_type, file_content, message_id)
+        # Add message to the appropriate chat
+        if is_global:
+            self.add_message_to_global_chat("You", message, message_type, file_content, message_id)
+        else:
+            self.add_message_to_chat("You", message, message_type, file_content, message_id)
 
-        self.entry.delete(0, tk.END)
+        entry_widget.delete(0, tk.END)
         self.current_file_path = None
         self.current_file_type = None
-        self.attach_label.config(text="")
+        attach_label.config(text="")
+
+    def add_message_to_global_chat(self, sender, message, message_type='text', file_path=None, message_id=None):
+        """Add a message to the global chat display."""
+        msg_frame = ttk.Frame(self.global_messages_frame)
+        msg_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        sender_label = ttk.Label(msg_frame, text=f"{sender}:", font=("Arial", 10, "bold"))
+        sender_label.pack(anchor=tk.W, padx=5, pady=2)
+
+        if message_type == 'text':
+            msg_content = ttk.Label(msg_frame, text=message, wraplength=400, justify=tk.LEFT)
+            msg_content.pack(anchor=tk.W, padx=5, pady=2)
+        elif message_type == 'image' and file_path and os.path.exists(file_path):
+            try:
+                img = Image.open(file_path)
+                img.thumbnail((300, 300))
+                photo = ImageTk.PhotoImage(img)
+                msg_content = ttk.Label(msg_frame, image=photo)
+                msg_content.image = photo
+                msg_content.pack(anchor=tk.W, padx=5, pady=2)
+            except Exception as e:
+                msg_content = ttk.Label(msg_frame, text=f"Error displaying image: {str(e)}")
+                msg_content.pack(anchor=tk.W, padx=5, pady=2)
+        elif message_type == 'pdf' and file_path and os.path.exists(file_path):
+            msg_content = ttk.Label(msg_frame, text=message, wraplength=400, justify=tk.LEFT)
+            msg_content.pack(anchor=tk.W, padx=5, pady=2)
+
+            # Create a frame for PDF actions
+            pdf_actions = ttk.Frame(msg_frame)
+            pdf_actions.pack(anchor=tk.W, padx=5, pady=2)
+
+            # Add both buttons to the same frame
+            open_btn = ttk.Button(pdf_actions, text="Open PDF", command=lambda: self.open_file(file_path))
+            open_btn.pack(side=tk.LEFT, padx=2)
+
+        else:
+            msg_content = ttk.Label(msg_frame, text=message, wraplength=400, justify=tk.LEFT)
+            msg_content.pack(anchor=tk.W, padx=5, pady=2)
+
+        action_frame = ttk.Frame(msg_frame)
+        action_frame.pack(anchor=tk.W, padx=5, pady=2)
+
+        copy_btn = ttk.Button(action_frame, text="Copy", command=lambda: self.copy_message(message))
+        copy_btn.pack(side=tk.LEFT, padx=2)
+
+        if message_id:
+            delete_btn = ttk.Button(action_frame, text="Delete", 
+                                  command=lambda: self.delete_message(message_id, msg_frame))
+            delete_btn.pack(side=tk.LEFT, padx=2)
+
+            change_proj_btn = ttk.Button(action_frame, text="Move to Project", 
+                                       command=lambda: self.change_message_project(message_id))
+            change_proj_btn.pack(side=tk.LEFT, padx=2)
+
+            self.message_widgets[message_id] = msg_frame
+
+        self.global_messages_canvas.update_idletasks()
+        self.global_messages_canvas.configure(scrollregion=self.global_messages_canvas.bbox("all"))
+        self.global_messages_canvas.yview_moveto(1.0)
 
     def add_message_to_chat(self, sender, message, message_type='text', file_path=None, message_id=None, project=None):
-        """Add a message to the chat display."""
+        """Add a message to the project chat display."""
         msg_frame = ttk.Frame(self.messages_frame)
         msg_frame.pack(fill=tk.X, padx=5, pady=5)
 
@@ -284,19 +471,15 @@ class UIManager:
         elif message_type == 'pdf' and file_path and os.path.exists(file_path):
             msg_content = ttk.Label(msg_frame, text=message, wraplength=400, justify=tk.LEFT)
             msg_content.pack(anchor=tk.W, padx=5, pady=2)
-            
+
             # Create a frame for PDF actions
             pdf_actions = ttk.Frame(msg_frame)
             pdf_actions.pack(anchor=tk.W, padx=5, pady=2)
-            
+
             # Add both buttons to the same frame
             open_btn = ttk.Button(pdf_actions, text="Open PDF", command=lambda: self.open_file(file_path))
             open_btn.pack(side=tk.LEFT, padx=2)
-            
-            if message_id:
-                change_proj_btn = ttk.Button(pdf_actions, text="Move to Project", 
-                                           command=lambda: self.change_message_project(message_id))
-                change_proj_btn.pack(side=tk.LEFT, padx=2)
+
         else:
             msg_content = ttk.Label(msg_frame, text=message, wraplength=400, justify=tk.LEFT)
             msg_content.pack(anchor=tk.W, padx=5, pady=2)
@@ -311,6 +494,11 @@ class UIManager:
             delete_btn = ttk.Button(action_frame, text="Delete", 
                                   command=lambda: self.delete_message(message_id, msg_frame))
             delete_btn.pack(side=tk.LEFT, padx=2)
+
+            change_proj_btn = ttk.Button(action_frame, text="Move to Project", 
+                                       command=lambda: self.change_message_project(message_id))
+            change_proj_btn.pack(side=tk.LEFT, padx=2)
+
             self.message_widgets[message_id] = msg_frame
 
         self.messages_canvas.update_idletasks()
@@ -384,6 +572,25 @@ class UIManager:
                 messagebox.showerror("Error", "Failed to move message.")
 
         ttk.Button(dialog, text="Submit", command=on_submit).pack(pady=10)
+
+    def load_global_chat_history(self):
+        """Load chat history for the global chat (main project)."""
+        # Clear existing messages
+        for widget in self.global_messages_frame.winfo_children():
+            widget.destroy()
+
+        # Get messages from database for the main project
+        messages = self.db_handler.get_messages("main")
+
+        # Add messages to global chat
+        for msg in messages:
+            self.add_message_to_global_chat(
+                msg['sender'],
+                msg['message'],
+                msg['message_type'],
+                msg['file_path'],
+                msg['id']
+            )
 
     def load_chat_history(self, project=None):
         """Load chat history for the current project."""
@@ -483,25 +690,25 @@ class UIManager:
         """Retrieve all projects and their first 10 messages."""
         projects = self.db_handler.get_projects()
         result = []
-        
+
         for project in projects:
             result.append(f"Project: {project}")
             messages = self.db_handler.get_messages(project, limit=10)
             for msg in messages:
                 result.append(f"- {msg['sender']}: {msg['message']}")
             result.append("\n")
-        
+
         return "\n".join(result)
 
     def retrieve_unprocessed_messages(self):
         """Retrieve all unprocessed messages."""
         messages = self.db_handler.get_unprocessed_messages()
         result = []
-        
+
         for i, msg in enumerate(messages, 1):
             result.append(f"{i}. Project: {msg['project']}")
             result.append(f"   Sender: {msg['sender']}")
             result.append(f"   Message: {msg['message']}")
             result.append("")
-        
+
         return "\n".join(result) 
