@@ -5,13 +5,12 @@ import os
 import shutil
 from PIL import Image, ImageTk
 import base64
-from database_utils import DatabaseHandler
 import threading
 
 class UIManager:
-    def __init__(self, root):
+    def __init__(self, root, db_handler):
         self.root = root
-        self.db_handler = DatabaseHandler()
+        self.db_handler = db_handler
         self.current_project = "main"
         self.message_widgets = {}
         self.current_file_path = None
@@ -30,48 +29,104 @@ class UIManager:
         self.main_container = ttk.Frame(self.root)
         self.main_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Create project tabs
-        self.project_notebook = ttk.Notebook(self.main_container)
-        self.project_notebook.pack(fill=tk.BOTH, expand=True)
+        # Create main pages
+        self.pages = ttk.Notebook(self.main_container)
+        self.pages.pack(fill=tk.BOTH, expand=True)
 
-        # Create main chat tab
-        self.main_tab = ttk.Frame(self.project_notebook)
-        self.project_notebook.add(self.main_tab, text="Main")
+        # Create projects page
+        self.projects_page = ttk.Frame(self.pages)
+        self.pages.add(self.projects_page, text="Projects")
+
+        # Create project chat page
+        self.chat_page = ttk.Frame(self.pages)
+        self.pages.add(self.chat_page, text="Chat")
+
+        # Set up projects page
+        self.setup_projects_page()
+
+        # Set up chat page
+        self.setup_chat_page()
+
+        # Create menu bar
+        self.create_menu()
+
+        # Load initial projects
+        self.load_projects()
+
+    def setup_projects_page(self):
+        """Set up the projects page with a grid of project folders."""
+        # Create a frame for the grid
+        self.projects_frame = ttk.Frame(self.projects_page)
+        self.projects_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Create a canvas with scrollbar for projects
+        self.projects_canvas = tk.Canvas(self.projects_frame)
+        self.projects_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.projects_scrollbar = ttk.Scrollbar(self.projects_frame, orient=tk.VERTICAL, command=self.projects_canvas.yview)
+        self.projects_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.projects_canvas.configure(yscrollcommand=self.projects_scrollbar.set)
+
+        # Create a frame inside the canvas for project folders
+        self.projects_grid = ttk.Frame(self.projects_canvas)
+        self.projects_canvas.create_window((0, 0), window=self.projects_grid, anchor=tk.NW)
+
+        # Add new project button
+        self.new_project_btn = ttk.Button(self.projects_page, text="New Project", command=self.create_new_project)
+        self.new_project_btn.pack(pady=10)
+
+    def setup_chat_page(self):
+        """Set up the chat page with message display and input area."""
+        # Create header frame
+        header_frame = ttk.Frame(self.chat_page)
+        header_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        # Project label
+        self.project_label = ttk.Label(header_frame, text="Current Project: main", font=("Arial", 12, "bold"))
+        self.project_label.pack(side=tk.LEFT)
+
+        # Search frame
+        search_frame = ttk.Frame(header_frame)
+        search_frame.pack(side=tk.RIGHT)
+
+        self.search_entry = ttk.Entry(search_frame, width=20)
+        self.search_entry.pack(side=tk.LEFT, padx=5)
+
+        search_button = ttk.Button(search_frame, text="Search", command=self.search_messages)
+        search_button.pack(side=tk.LEFT)
 
         # Create messages area
-        self.messages_canvas = tk.Canvas(self.main_tab)
-        self.messages_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.messages_canvas = tk.Canvas(self.chat_page)
+        self.messages_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         self.messages_frame = ttk.Frame(self.messages_canvas)
         self.messages_canvas.create_window((0, 0), window=self.messages_frame, anchor=tk.NW)
 
         # Add scrollbar
-        self.scrollbar = ttk.Scrollbar(self.main_tab, orient=tk.VERTICAL, command=self.messages_canvas.yview)
+        self.scrollbar = ttk.Scrollbar(self.chat_page, orient=tk.VERTICAL, command=self.messages_canvas.yview)
         self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.messages_canvas.configure(yscrollcommand=self.scrollbar.set)
 
         # Create input area
-        self.input_frame = ttk.Frame(self.main_container)
-        self.input_frame.pack(fill=tk.X, pady=5)
+        self.input_frame = ttk.Frame(self.chat_page)
+        self.input_frame.pack(fill=tk.X, padx=10, pady=5)
 
+        # Attachment label
+        self.attach_label = ttk.Label(self.input_frame, text="")
+        self.attach_label.pack(anchor=tk.W, pady=2)
+
+        # Message entry
         self.entry = ttk.Entry(self.input_frame)
         self.entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         self.entry.bind("<Return>", self.send_message)
 
+        # Attach button
         self.attach_button = ttk.Button(self.input_frame, text="Attach", command=self.attach_file)
         self.attach_button.pack(side=tk.LEFT, padx=5)
 
-        self.attach_label = ttk.Label(self.input_frame, text="")
-        self.attach_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
+        # Send button
         self.send_button = ttk.Button(self.input_frame, text="Send", command=lambda: self.send_message())
         self.send_button.pack(side=tk.LEFT, padx=5)
-
-        # Create menu bar
-        self.create_menu()
-
-        # Load initial chat history
-        self.load_chat_history()
 
     def create_menu(self):
         """Create the application menu bar."""
@@ -90,12 +145,60 @@ class UIManager:
         menubar.add_cascade(label="Edit", menu=edit_menu)
         edit_menu.add_command(label="Search Messages", command=self.search_messages)
 
+    def load_projects(self):
+        """Load and display all projects as folders."""
+        # Clear existing projects
+        for widget in self.projects_grid.winfo_children():
+            widget.destroy()
+
+        # Get projects
+        projects = self.db_handler.get_projects()
+
+        # Create project folders
+        row = 0
+        col = 0
+        max_cols = 3  # Number of columns in the grid
+
+        for project in projects:
+            if project == "main":
+                continue  # Skip main project as it's not shown in folders
+
+            # Create project folder frame
+            folder_frame = ttk.Frame(self.projects_grid, padding=10)
+            folder_frame.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
+
+            # Create folder icon (using a button with text)
+            folder_btn = ttk.Button(folder_frame, text=f"📁 {project}", 
+                                  command=lambda p=project: self.open_project(p))
+            folder_btn.pack(fill=tk.BOTH, expand=True)
+
+            # Update grid position
+            col += 1
+            if col >= max_cols:
+                col = 0
+                row += 1
+
+        # Configure grid columns to be equal width
+        for i in range(max_cols):
+            self.projects_grid.grid_columnconfigure(i, weight=1)
+
+        # Update canvas scroll region
+        self.projects_canvas.update_idletasks()
+        self.projects_canvas.configure(scrollregion=self.projects_canvas.bbox("all"))
+
+    def open_project(self, project_name):
+        """Open a project's chat."""
+        self.current_project = project_name
+        self.project_label.config(text=f"Current Project: {project_name}")
+        self.pages.select(self.chat_page)
+        self.load_chat_history()
+
     def auto_update(self):
-        """Periodically refresh the chat and project tabs."""
+        """Periodically refresh the chat and projects."""
         if self.auto_update_active:
             if self.current_project == "main":
                 self.load_chat_history()
-            self.update_project_tabs()
+            self.load_projects()
             self.root.after(5000, self.auto_update)
 
     def attach_file(self):
@@ -181,8 +284,19 @@ class UIManager:
         elif message_type == 'pdf' and file_path and os.path.exists(file_path):
             msg_content = ttk.Label(msg_frame, text=message, wraplength=400, justify=tk.LEFT)
             msg_content.pack(anchor=tk.W, padx=5, pady=2)
-            open_btn = ttk.Button(msg_frame, text="Open PDF", command=lambda: self.open_file(file_path))
-            open_btn.pack(anchor=tk.W, padx=5, pady=2)
+            
+            # Create a frame for PDF actions
+            pdf_actions = ttk.Frame(msg_frame)
+            pdf_actions.pack(anchor=tk.W, padx=5, pady=2)
+            
+            # Add both buttons to the same frame
+            open_btn = ttk.Button(pdf_actions, text="Open PDF", command=lambda: self.open_file(file_path))
+            open_btn.pack(side=tk.LEFT, padx=2)
+            
+            if message_id:
+                change_proj_btn = ttk.Button(pdf_actions, text="Move to Project", 
+                                           command=lambda: self.change_message_project(message_id))
+                change_proj_btn.pack(side=tk.LEFT, padx=2)
         else:
             msg_content = ttk.Label(msg_frame, text=message, wraplength=400, justify=tk.LEFT)
             msg_content.pack(anchor=tk.W, padx=5, pady=2)
@@ -197,9 +311,6 @@ class UIManager:
             delete_btn = ttk.Button(action_frame, text="Delete", 
                                   command=lambda: self.delete_message(message_id, msg_frame))
             delete_btn.pack(side=tk.LEFT, padx=2)
-            change_proj_btn = ttk.Button(action_frame, text="Move to Project", 
-                                       command=lambda: self.change_message_project(message_id))
-            change_proj_btn.pack(side=tk.LEFT, padx=2)
             self.message_widgets[message_id] = msg_frame
 
         self.messages_canvas.update_idletasks()
@@ -267,6 +378,7 @@ class UIManager:
             if self.db_handler.update_message_project(message_id, selected_project):
                 dialog.destroy()
                 self.load_chat_history()
+                self.load_projects()
                 messagebox.showinfo("Success", "Message moved successfully!")
             else:
                 messagebox.showerror("Error", "Failed to move message.")
@@ -311,68 +423,12 @@ class UIManager:
             if project_name:
                 if self.db_handler.create_project(project_name):
                     dialog.destroy()
-                    self.update_project_tabs()
+                    self.load_projects()
                     messagebox.showinfo("Success", "Project created successfully!")
                 else:
                     messagebox.showerror("Error", "Failed to create project.")
 
         ttk.Button(dialog, text="Create", command=on_submit).pack(pady=10)
-
-    def update_project_tabs(self):
-        """Update the project tabs in the notebook."""
-        # Get current projects
-        projects = self.db_handler.get_projects()
-
-        # Remove existing tabs except main
-        for tab in self.project_notebook.tabs()[1:]:
-            self.project_notebook.forget(tab)
-
-        # Add tabs for each project
-        for project in projects:
-            if project != "main":
-                self.create_project_tab(project)
-
-    def create_project_tab(self, project_name):
-        """Create a new tab for a project."""
-        project_tab = ttk.Frame(self.project_notebook)
-        self.project_notebook.add(project_tab, text=project_name)
-
-        # Create messages area
-        messages_canvas = tk.Canvas(project_tab)
-        messages_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        messages_frame = ttk.Frame(messages_canvas)
-        messages_canvas.create_window((0, 0), window=messages_frame, anchor=tk.NW)
-
-        # Add scrollbar
-        scrollbar = ttk.Scrollbar(project_tab, orient=tk.VERTICAL, command=messages_canvas.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        messages_canvas.configure(yscrollcommand=scrollbar.set)
-
-        def load_project():
-            # Clear existing messages
-            for widget in messages_frame.winfo_children():
-                widget.destroy()
-
-            # Get messages for this project
-            messages = self.db_handler.get_messages(project_name)
-
-            # Add messages to chat
-            for msg in messages:
-                self.add_message_to_chat(
-                    msg['sender'],
-                    msg['message'],
-                    msg['message_type'],
-                    msg['file_path'],
-                    msg['id'],
-                    msg['project']
-                )
-
-            messages_canvas.update_idletasks()
-            messages_canvas.configure(scrollregion=messages_canvas.bbox("all"))
-
-        # Load initial messages
-        load_project()
 
     def search_messages(self):
         """Open search dialog."""
