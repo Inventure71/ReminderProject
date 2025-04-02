@@ -7,6 +7,7 @@ from PIL import Image, ImageTk
 import base64
 from database_utils import DatabaseHandler
 import threading
+from ui_manager import UIManager
 
 # Create a database handler instance
 db_handler = DatabaseHandler()
@@ -677,3 +678,17 @@ auto_update()
 
 # Start the Tkinter event loop
 root.mainloop()
+
+def main():
+    root = tk.Tk()
+    root.title("Reminder Project")
+    root.geometry("800x600")
+    
+    # Create and initialize the UI manager
+    ui_manager = UIManager(root)
+    
+    # Start the main event loop
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
